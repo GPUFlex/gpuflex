@@ -1,0 +1,7 @@
+fastapi
+torch
+cloudpickle
+requests
+numpy
+flask
+scikit-learn

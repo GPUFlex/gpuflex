@@ -1,0 +1,77 @@
+version: "3.8"
+
+services:
+  worker1:
+    build:
+      context: ./worker
+    container_name: worker1
+    ports:
+      - "5001:5000"
+    networks:
+      - flnet
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker2:
+    build:
+      context: ./worker
+    container_name: worker2
+    ports:
+      - "5002:5000"
+    networks:
+      - flnet
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker3:
+    build:
+      context: ./worker
+    container_name: worker3
+    ports:
+      - "5003:5000"
+    networks:
+      - flnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  coordinator:
+    build:
+      context: ./coordinator
+    container_name: coordinator
+    ports:
+      - "6000:6000"
+    networks:
+      - flnet
+    depends_on:
+      worker1:
+        condition: service_started
+      worker2:
+        condition: service_started
+      worker3:
+        condition: service_started
+    command: ["python", "coordinator.py"]
+
+networks:
+  flnet:
+    driver: bridge
