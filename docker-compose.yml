@@ -12,7 +12,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000"]
       interval: 5s
@@ -30,7 +30,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 2g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000"]
       interval: 5s
@@ -48,7 +48,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 2g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000"]
       interval: 5s

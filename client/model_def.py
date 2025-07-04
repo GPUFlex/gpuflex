@@ -1,30 +1,45 @@
-# model_def.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from tqdm import trange
 
-class TinyModel(nn.Module):
-    def __init__(self, input_dim=30):
+class RealEstateModel(nn.Module):
+    def __init__(self, input_dim=8):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 16),
+        self.input_layer = nn.Linear(input_dim, 128)
+        self.block = nn.Sequential(
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, 32),
+            nn.ReLU()
         )
+        self.output_layer = nn.Linear(32, 1)
 
     def forward(self, x):
-        return self.net(x)
+        x = F.relu(self.input_layer(x))
+        x = self.block(x)
+        return self.output_layer(x)
 
-def train_model(model, data):
+
+def train_model(model, data, device='cpu'):
     x, y = data
+    x, y = x.to(device), y.to(device)
+    model.to(device)
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    loss_fn = nn.BCELoss()
 
-    for _ in range(10):
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    loss_fn = nn.MSELoss()
+
+    for epoch in trange(30, desc="Training"):
         optimizer.zero_grad()
-        y_pred = model(x)
-        loss = loss_fn(y_pred, y)
+        preds = model(x)
+        loss = loss_fn(preds, y)
         loss.backward()
         optimizer.step()
+
+    return loss.item()

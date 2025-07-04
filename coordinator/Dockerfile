@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir \
     torch==2.3.0 \
     cloudpickle==3.0.0 \
     requests==2.32.3 \
-    numpy
+    numpy \ 
+    tqdm
 
 # Додаємо код у контейнер
 WORKDIR /app

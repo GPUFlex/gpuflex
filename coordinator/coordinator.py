@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 import torch, cloudpickle, io, requests
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+
 
 app = Flask(__name__)
 
@@ -47,8 +49,9 @@ def start_training():
     shards = list(zip(torch.chunk(data[0], TOTAL_WORKERS), torch.chunk(data[1], TOTAL_WORKERS)))
     print(f"📊 Sharded data into {TOTAL_WORKERS} parts: {[len(shard[0]) for shard in shards]}", flush=True)
 
+
     def dispatch():
-        for i, url in enumerate(WORKER_ENDPOINTS):
+        def send_to_worker(i, url):
             files = {
                 'model': io.BytesIO(cloudpickle.dumps(model)),
                 'data': io.BytesIO(),
@@ -61,12 +64,19 @@ def start_training():
             print(f"📦 Payload to {url}: model={files['model'].getbuffer().nbytes} bytes, data={files['data'].getbuffer().nbytes} bytes", flush=True)
 
             try:
-                print(f"🚚 Dispatching job to {url}...", flush=True)
-                requests.post(f"{url}/send_data", files=files, timeout=10)
-                requests.post(f"{url}/train", timeout=10)
-                print(f"✅ Dispatched to {url}", flush=True)
+                print(f"🚚 Sending data to {url}...", flush=True)
+                resp1 = requests.post(f"{url}/send_data", files=files, timeout=20)
+                print(f"📤 Data sent to {url}: {resp1.status_code}", flush=True)
+
+                print(f"🏋️ Triggering training on {url}...", flush=True)
+                resp2 = requests.post(f"{url}/train", timeout=300)
+                print(f"✅ Training triggered on {url}: {resp2.status_code}", flush=True)
             except Exception as e:
-                print(f"❌ Failed to dispatch to {url}: {e}", flush=True)
+                print(f"❌ Error with {url}: {e}", flush=True)
+
+        with ThreadPoolExecutor(max_workers=TOTAL_WORKERS) as executor:
+            for i, url in enumerate(WORKER_ENDPOINTS):
+                executor.submit(send_to_worker, i, url)
 
     Thread(target=dispatch).start()
     return jsonify({"status": "Training dispatched"})
@@ -94,17 +104,23 @@ def receive_model():
 
     return jsonify({"status": "received"})
 
-
 def merge_and_return():
     print("🔗 Merging models...", flush=True)
-
     try:
         keys = list(received_states.keys())
         base = received_states[keys[0]]
-        avg_state = {
-            k: sum(worker[k] for worker in received_states.values()) / len(received_states)
-            for k in base
-        }
+
+        avg_state = {}
+        for k in base:
+            stacked = torch.stack([
+                v[k].float() if torch.is_floating_point(v[k]) else v[k]
+                for v in received_states.values()
+            ])
+            if torch.is_floating_point(base[k]):
+                avg_state[k] = stacked.mean(0)
+            else:
+                # для LongTensor або інших — беремо просто з першого воркера
+                avg_state[k] = base[k]
 
         buffer = io.BytesIO()
         torch.save(avg_state, buffer)
@@ -117,9 +133,9 @@ def merge_and_return():
             timeout=10
         )
         print("✅ Final model sent to client", flush=True)
+
     except Exception as e:
         print(f"❌ Failed to merge or send model to client: {e}", flush=True)
-
 
 @app.get("/")
 def health():

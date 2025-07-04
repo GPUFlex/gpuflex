@@ -5,3 +5,4 @@ requests
 numpy
 flask
 scikit-learn
+tqdm
