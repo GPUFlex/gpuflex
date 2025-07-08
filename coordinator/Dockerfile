@@ -16,8 +16,10 @@ RUN pip install --no-cache-dir \
     cloudpickle==3.0.0 \
     requests==2.32.3 \
     numpy \ 
-    tqdm
-
+    tqdm \
+    pandas \
+    scikit-learn
+    
 # Додаємо код у контейнер
 WORKDIR /app
 COPY . .
