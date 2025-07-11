@@ -7,6 +7,7 @@ model = None
 data = None
 train_func = None
 evaluate_func = None
+#todo change url to deployed coordinator
 COORDINATOR_URL = "http://coordinator:6000"
 
 @app.post("/send_data")

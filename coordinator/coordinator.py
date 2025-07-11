@@ -5,24 +5,19 @@ from concurrent.futures import ThreadPoolExecutor
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import os
+import json
 #from sklearn.metrics import mean_squared_error, roc_auc_score
 
 app = Flask(__name__)
 
 client_callback_url = None
 received_states = {}
-TOTAL_WORKERS = 3
-WORKER_ENDPOINTS = [
-    "http://worker1:5000",
-    "http://worker2:5000",
-    "http://worker3:5000",
-]
-
+worker_endpoints = []
 ModelClass = None
 
 @app.post("/start_training")
 def start_training():
-    global client_callback_url, received_states, ModelClass
+    global client_callback_url, received_states, ModelClass, worker_endpoints
 
     print("📥 Incoming training job...", flush=True)
 
@@ -30,6 +25,10 @@ def start_training():
         model_def_file = request.files['model_def']
         data_file = request.files['data']
         callback_url = request.form['callback_url']
+        workers_raw = request.form['workers']
+
+        worker_endpoints = json.loads(workers_raw)
+
         client_callback_url = callback_url
         print("✅ Received model_def and callback URL", flush=True)
     except Exception as e:
@@ -64,8 +63,8 @@ def start_training():
         return jsonify({"error": f"Failed to prepare dataset: {e}"}), 500
 
     received_states = {}
-    shards = list(zip(torch.chunk(dataset[0], TOTAL_WORKERS), torch.chunk(dataset[1], TOTAL_WORKERS)))
-    print(f"📊 Sharded data into {TOTAL_WORKERS} parts", flush=True)
+    shards = list(zip(torch.chunk(dataset[0], len(worker_endpoints)), torch.chunk(dataset[1], len(worker_endpoints))))
+    print(f"📊 Sharded data into {len(worker_endpoints)} parts", flush=True)
 
     def dispatch():
         def send_to_worker(i, url):
@@ -84,8 +83,8 @@ def start_training():
             except Exception as e:
                 print(f"❌ Error with {url}: {e}", flush=True)
 
-        with ThreadPoolExecutor(max_workers=TOTAL_WORKERS) as executor:
-            for i, url in enumerate(WORKER_ENDPOINTS):
+        with ThreadPoolExecutor(max_workers=len(worker_endpoints)) as executor:
+            for i, url in enumerate(worker_endpoints):
                 executor.submit(send_to_worker, i, url)
 
     Thread(target=dispatch).start()
@@ -101,12 +100,12 @@ def receive_model():
         buffer = io.BytesIO(request.data)
         state_dict = torch.load(buffer)
         received_states[worker_id] = state_dict
-        print(f"📥 Received model from {worker_id} ({len(received_states)}/{TOTAL_WORKERS})", flush=True)
+        print(f"📥 Received model from {worker_id} ({len(received_states)}/{len(worker_endpoints)})", flush=True)
     except Exception as e:
         print(f"❌ Error receiving model from {worker_id}: {e}", flush=True)
         return jsonify({"error": str(e)}), 400
 
-    if len(received_states) == TOTAL_WORKERS:
+    if len(received_states) == len(worker_endpoints):
         print("🧮 All models received. Starting merge...", flush=True)
         merge_and_return()
 
@@ -148,10 +147,6 @@ def merge_and_return():
     buffer = io.BytesIO()
     torch.save(model.state_dict(), buffer)
     buffer.seek(0)
-    
-    # buffer = io.BytesIO()
-    # torch.save(avg_state, buffer)
-    # buffer.seek(0)
 
     try:
         print("📤 Sending merged model to client...", flush=True)
